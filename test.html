@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aptitude Test</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+
+        <!-- User Info -->
+        <div id="userInfo" class="bg-white p-4 rounded-lg shadow-md mb-6 hidden">
+            <h2 class="text-xl font-bold mb-2">Test Taker: <span id="displayName"></span></h2>
+            <p>Email: <span id="displayEmail"></span></p>
+            <p>Phone: <span id="displayPhone"></span></p>
+        </div>
+
+        <!-- Start Screen -->
+        <div id="startScreen" class="bg-white p-6 rounded-lg shadow-md text-center">
+            <h2 class="text-lg font-semibold text-blue-800 mb-2">📝 Test Rules & Instructions</h2>
+                <ul class="list-disc list-inside text-gray-700 space-y-2 text-sm sm:text-base">
+                    <li>Total test duration is <b>60 minutes</b>. The timer starts once you begin the test.</li>
+                    <li>The test consists of <b>3 sections:</b> Verbal Ability, Quantitative Aptitude, and Analytical Reasoning.</li>
+                    <li>You can switch between sections at any time using the section buttons.</li>
+                    <li>Each question has <b>only one correct answer</b>. Select the best option before moving forward.</li>
+                    <li>You can review and change your answers before submitting the test.</li>
+                    <li>Once you click <b>“Submit Test”</b>, you cannot make any changes.</li>
+                    <li>The test will run in <b>fullscreen mode</b>. Avoid pressing the <b>Esc</b> key or switching tabs.</li>
+                    <li>If you exit fullscreen or switch tabs multiple times, your test may be auto-submitted.</li>
+                    <li>Ensure a stable internet connection before starting.</li>
+                </ul>
+            <button id="startTestBtn" class="bg-blue-500 text-white py-3 px-6 rounded-lg hover:bg-blue-600">
+                Start Test
+            </button>
+        </div>
+
+        <!-- Test Section -->
+        <div id="testSection" class="hidden">
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="flex justify-between items-center mb-4">
+                    <h1 id="sectionTitle" class="text-2xl font-bold">Verbal Ability</h1>
+                    <div class="text-right">
+                        <div id="timer" class="text-lg font-semibold text-red-600 mb-2">60:00</div>
+                        <div class="text-sm text-gray-600">Question <span id="currentQuestion">1</span></div>
+                    </div>
+                </div>
+
+                <div id="questionContainer" class="mb-4">
+                    <!-- Question will load here -->
+                </div>
+
+                <div class="flex justify-between">
+                    <button id="prevBtn" class="bg-gray-500 text-white py-2 px-4 rounded-md hover:bg-gray-600 disabled:opacity-50" disabled>Previous</button>
+                    <div class="flex space-x-2">
+                        <button id="nextBtn" class="bg-blue-500 text-white py-2 px-4 rounded-md hover:bg-blue-600">Next</button>
+                        <button id="submitTestBtn" class="bg-red-500 text-white py-2 px-4 rounded-md hover:bg-red-600">Submit Test</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex justify-center space-x-4 mb-6">
+                <button id="sectionVerbal" class="px-4 py-2 bg-blue-500 text-white rounded-md">Verbal</button>
+                <button id="sectionQuant" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md">Quantitative</button>
+                <button id="sectionAnalytical" class="px-4 py-2 bg-gray-300 text-gray-700 rounded-md">Analytical</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let questions = {};
+        let currentSection = 'verbal';
+        let currentQuestionIndex = 0;
+        let answers = { verbal: [], quant: [], analytical: [] };
+        let timerInterval, startTime;
+
+        // Load user data
+        const userData = JSON.parse(localStorage.getItem('userData'));
+        if (userData) {
+            document.getElementById('displayName').textContent = userData.name;
+            document.getElementById('displayEmail').textContent = userData.email;
+            document.getElementById('displayPhone').textContent = userData.phone;
+            document.getElementById('userInfo').classList.remove('hidden');
+        }
+
+        // Fullscreen Functions
+        function enterFullscreen() {
+            const elem = document.documentElement;
+            if (elem.requestFullscreen) elem.requestFullscreen();
+            else if (elem.mozRequestFullScreen) elem.mozRequestFullScreen();
+            else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+            else if (elem.msRequestFullscreen) elem.msRequestFullscreen();
+        }
+
+        function exitFullscreen() {
+            if (document.exitFullscreen) document.exitFullscreen();
+            else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+            else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            else if (document.msExitFullscreen) document.msExitFullscreen();
+        }
+
+        // Start Test
+        document.getElementById('startTestBtn').addEventListener('click', async () => {
+            enterFullscreen();
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('testSection').classList.remove('hidden');
+            document.getElementById('testSection').classList.add('block');
+
+            startTime = Date.now();
+            startTimer();
+
+            const response = await fetch('question.json');
+            questions = await response.json();
+            loadSection('verbal');
+            setupSectionButtons();
+            setupNavigation();
+        });
+
+        function loadSection(section) {
+            currentSection = section;
+            currentQuestionIndex = 0;
+            if (!answers[currentSection] || answers[currentSection].length === 0) {
+                answers[currentSection] = new Array(questions[section].length).fill(null);
+            }
+            updateSectionTitle();
+            loadQuestion();
+            updateNavigation();
+            updateSectionButtons();
+        }
+
+        function updateSectionTitle() {
+            const titles = {
+                verbal: 'Verbal Ability',
+                quant: 'Quantitative Aptitude',
+                analytical: 'Analytical Ability'
+            };
+            document.getElementById('sectionTitle').textContent = titles[currentSection];
+        }
+
+        function loadQuestion() {
+            const sectionQuestions = questions[currentSection];
+            const q = sectionQuestions[currentQuestionIndex];
+            document.getElementById('currentQuestion').textContent = currentQuestionIndex + 1;
+
+            let html = `<div class="mb-4 p-4 border rounded-md">
+                <p class="font-medium mb-4">${q.question}</p>
+                <div class="space-y-2">`;
+            q.options.forEach((option, index) => {
+                const selected = answers[currentSection][currentQuestionIndex] === index ? 'bg-blue-100 border-blue-500' : 'bg-white border-gray-300';
+                html += `<label class="flex items-center p-2 border rounded-md cursor-pointer hover:bg-gray-50 ${selected}">
+                    <input type="radio" name="answer" value="${index}" class="mr-2" ${answers[currentSection][currentQuestionIndex] === index ? 'checked' : ''}>
+                    ${option}
+                </label>`;
+            });
+            html += '</div></div>';
+
+            document.getElementById('questionContainer').innerHTML = html;
+
+            document.querySelectorAll('input[name="answer"]').forEach(radio => {
+                radio.addEventListener('change', function() {
+                    answers[currentSection][currentQuestionIndex] = parseInt(this.value);
+                });
+            });
+        }
+
+        function updateNavigation() {
+            document.getElementById('prevBtn').disabled = currentQuestionIndex === 0;
+            const nextBtn = document.getElementById('nextBtn');
+            if (currentQuestionIndex === questions[currentSection].length - 1) {
+                nextBtn.textContent = 'Finish Section';
+                nextBtn.onclick = finishSection;
+            } else {
+                nextBtn.textContent = 'Next';
+                nextBtn.onclick = nextQuestion;
+            }
+        }
+
+        function nextQuestion() {
+            if (currentQuestionIndex < questions[currentSection].length - 1) {
+                currentQuestionIndex++;
+                loadQuestion();
+                updateNavigation();
+            }
+        }
+
+        function prevQuestion() {
+            if (currentQuestionIndex > 0) {
+                currentQuestionIndex--;
+                loadQuestion();
+                updateNavigation();
+            }
+        }
+
+        function finishSection() {
+            if (currentSection === 'analytical') {
+                submitTest();
+            } else {
+                const nextSections = { verbal: 'quant', quant: 'analytical' };
+                loadSection(nextSections[currentSection]);
+            }
+        }
+
+        function submitTest() {
+            const verbalScore = answers.verbal.filter((a, i) => a !== null && questions.verbal[i].options[a] === questions.verbal[i].answer).length;
+            const quantScore = answers.quant.filter((a, i) => a !== null && questions.quant[i].options[a] === questions.quant[i].answer).length;
+            const analyticalScore = answers.analytical.filter((a, i) => a !== null && questions.analytical[i].options[a] === questions.analytical[i].answer).length;
+            const totalScore = verbalScore + quantScore + analyticalScore;
+
+            const scores = { verbal: verbalScore, quant: quantScore, analytical: analyticalScore, total: totalScore };
+            localStorage.setItem('scores', JSON.stringify(scores));
+
+            stopTimer();
+            exitFullscreen();
+            window.location.href = 'results.html';
+        }
+        
+           // Auto-submit if exit fullscreen
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        alert("You exited fullscreen. The test will be auto-submitted.");
+        submitTest();
+      }
+    });
+
+
+        function setupNavigation() {
+            document.getElementById('prevBtn').onclick = prevQuestion;
+            document.getElementById('nextBtn').onclick = nextQuestion;
+            document.getElementById('submitTestBtn').onclick = submitTest;
+        }
+
+        function setupSectionButtons() {
+            document.getElementById('sectionVerbal').onclick = () => loadSection('verbal');
+            document.getElementById('sectionQuant').onclick = () => loadSection('quant');
+            document.getElementById('sectionAnalytical').onclick = () => loadSection('analytical');
+        }
+
+        function updateSectionButtons() {
+            document.querySelectorAll('#sectionVerbal, #sectionQuant, #sectionAnalytical').forEach(btn => {
+                btn.classList.remove('bg-blue-500', 'text-white', 'bg-gray-300', 'text-gray-700');
+                if (btn.id === `section${currentSection.charAt(0).toUpperCase() + currentSection.slice(1)}`) {
+                    btn.classList.add('bg-blue-500', 'text-white');
+                } else {
+                    btn.classList.add('bg-gray-300', 'text-gray-700');
+                }
+            });
+        }
+
+        function startTimer() {
+            const duration = 60 * 60 * 1000; // 60 minutes
+            timerInterval = setInterval(() => {
+                const elapsed = Date.now() - startTime;
+                const remaining = duration - elapsed;
+                if (remaining <= 0) {
+                    stopTimer();
+                    alert('Time up!');
+                    submitTest();
+                    return;
+                }
+                const minutes = Math.floor(remaining / 60000);
+                const seconds = Math.floor((remaining % 60000) / 1000);
+                document.getElementById('timer').textContent = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+        }
+    </script>
+</body>
+</html>
